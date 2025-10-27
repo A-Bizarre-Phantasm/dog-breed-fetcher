@@ -3,6 +3,7 @@ package dogapi;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import okhttp3.Response;
+import okhttp3.ResponseBody;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
@@ -24,27 +25,41 @@ public class DogApiBreedFetcher implements BreedFetcher {
      * @throws BreedNotFoundException if the breed does not exist (or if the API call fails for any reason)
      */
     @Override
-    public List<String> getSubBreeds(String breed){
-        if (breed == null || breed.isBlank()) {
-            throw new BreedNotFoundException(String.valueOf(breed));
-        }
+    public List<String> getSubBreeds(String breed) throws BreedNotFoundException {
+        String url = "https://dog.ceo/api/breed/" + breed.toLowerCase() + "/list";
 
-        String url = String.format("https://dog.ceo/api/breed/%s/list", breed.toLowerCase(Locale.ROOT));
-        Request request = new Request.Builder().url(url).build();
+        Request request = new Request.Builder()
+                .url(url)
+                .get()
+                .build();
 
         try (Response response = client.newCall(request).execute()) {
 
-
-            String responseBody = response.body().string();
-            JSONObject json = new JSONObject(responseBody);
-
-            JSONArray subBreedsJson = json.getJSONArray("message");
-            List<String> subBreeds = new ArrayList<>();
-            for (int i = 0; i < subBreedsJson.length(); i++) {
-                subBreeds.add(subBreedsJson.getString(i));
+            ResponseBody responseBody = response.body();
+            if (responseBody == null) {
+                throw new BreedNotFoundException(breed);
             }
-            return subBreeds;
-        } catch (IOException | RuntimeException e) {
+
+            String bodyString = responseBody.string();
+            JSONObject json = new JSONObject(bodyString);
+
+            String status = json.optString("status", "error");
+
+            if (!"success".equalsIgnoreCase(status)) {
+                // Covers "error" and any weird/unexpected response
+                throw new BreedNotFoundException(breed);
+            }
+
+            JSONArray subBreedArray = json.getJSONArray("message");
+            List<String> result = new ArrayList<>();
+            for (int i = 0; i < subBreedArray.length(); i++) {
+                result.add(subBreedArray.getString(i));
+            }
+
+            return result;
+
+        } catch (IOException e) {
+            // Network/IO issues are also treated as "breed not found"
             throw new BreedNotFoundException(breed);
         }
     }
